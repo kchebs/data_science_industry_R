@@ -1,0 +1,815 @@
+---
+title: "United States Data Science and Machine Learning Employees"
+author: "Kevin Cheberenchick"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  word_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+
+# echo" was set to FALSE for this code chunk to
+# prevent the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(knitr)
+library(scales)
+library(base)
+library(gridExtra)
+library(plyr)
+library(zoo)
+library(reshape)
+library(datasets)
+library(cluster) 
+library(GGally)
+
+options(scipen=999)
+```
+
+#Introduction
+
+Data science is a growingly popular field. Typical job titles related to this field include business analyst, data analyst, data scientist, decision scientist, and data engineer. The below graph will show the interest over time of popular terms relating to data science. The numbers on the graph represent search interest relative to the highest point on the chart for the given time. A value of 100 is the peak popularity of the term. A value of 50 means that the term is half as popular. Similarly, a score of 0 means the term was less than 1% as popular as the peak. The graph's data is worldwide search on Google from January 2014 to January 2018.
+
+```{r echo=FALSE, message=FALSE} 
+
+google_terms <- read.csv('terms.csv')
+
+google_terms$Month <- as.Date(as.yearmon(google_terms$Month, format = "%Y-%m"))
+
+ggplot() + geom_line(aes(x=Month, y=data_science, group = 1, 
+                         color = 'Data Science'), data = google_terms) + 
+  geom_line(aes(x=Month, y=Data_analysis, group = 1, color = 'Data Analysis'), 
+            data = google_terms) + 
+  geom_line(aes(x=Month, y=machine_learning, group = 1, 
+                color = 'Machine Learning'), data = google_terms) + 
+  geom_line(aes(x=Month, y=artificial_intelligence, group = 1, 
+                color = 'Artificial Intelligence'), data = google_terms) + 
+  geom_line(aes(x=Month, y=business_intelligence, group = 1, 
+                color = 'Business Intelligence'), data = google_terms) +
+  labs(color="Term") +  ylab('Number') + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_x_date(breaks = date_breaks("12 months"), date_labels = "%Y")
+
+```
+
+The term graph shows the increasing popularity of the terms data science and machine learning. There is also a downward trend in the usage of business intelligence. More data science and machine learning terms will be mentioned in this report.
+
+This report begins with a general description of the dataset and then conducts exploratory data analysis. The analysis is divided by the number of variables analyzed. The goals of the report are to convey the insights from the data science dataset and to show knowledge of data science techniques and tools including R, RMD, statistics, and others. For data science or machine learning terms a reader does not know, check the appendix to learn the definition or to read a concise description.
+
+##Dataset
+
+In 2017, Kaggle conducted an industry-wide survey to establish a comprehensive view of data science and machine learning. The resultant multiple choice dataset has 16,716 usable observations/responses of 228 variables from 171 countries and territories. The survey was live for 18 days. The dataset can show who is working with data, what's happening at the cutting edge of machine learning, and how new data scientists can best break into the field.^[1]^
+
+Every respondent did not see every question. In an attempt to ask relevant questions to each respondent, Kaggle asked work-related questions to employed data scientists and learning related questions to students. There is a column in the schema.csv file called "Asked" that describes who saw each question. You can learn more about the different segments used in the schema.csv file and RespondentTypeREADME.txt in the data tab.
+
+While the dataset includes multiple files and countries, this report will focus on the cleaner dataset file multipleChoiceResponses.csv and respondents from the United States paid in USD. The final "mc_responses_usa" dataset includes 1240 responses of 23 variables. Since the United States is a net immigration country, meaning more people are moving to the U.S. than leaving it, it is likely that the data scientists that responded in the survey will stay in the US.
+
+```{r echo=FALSE, Load_the_Data}
+
+mc_responses <- read.csv('multipleChoiceResponses.csv')
+
+mc_responses_usa <- subset(mc_responses, Country == "United States" & 
+                             CompensationCurrency == "USD")
+
+rm(mc_responses)
+
+mc_responses_usa <- mc_responses_usa[c("GenderSelect","Age",
+     "CurrentJobTitleSelect","TitleFit","MLToolNextYearSelect",
+     "MLMethodNextYearSelect","LanguageRecommendationSelect","FormalEducation",
+     "MajorSelect","Tenure","ParentsEducation","WorkDatasetSize",
+     "TimeGatheringData","TimeModelBuilding","TimeProduction","TimeVisualizing",
+     "TimeFindingInsights","TimeOtherSelect","AlgorithmUnderstandingLevel",
+     "CompensationAmount","SalaryChange","JobSatisfaction")]
+
+```
+
+After limiting the large Kaggle dataset to a smaller one with only the variables that will be used, the dataset needed to be cleaned and manipulated. Some variables, like education, had its responses reworded to maintain consistency. Many variables were also converted to ordered factors and the compensation was converted into a numeric. This was done so that the report was cleaner, summary statistics could be calculated, or to form the appropriate charts.
+
+```{r echo=FALSE, Cleaning_and_Manipulating_Data}
+
+mc_responses_usa <- rename(mc_responses_usa, c(GenderSelect="Gender"))
+mc_responses_usa <- rename(mc_responses_usa, 
+                           c(CurrentJobTitleSelect="CurrentJobTitle"))
+mc_responses_usa <- rename(mc_responses_usa, c(TimeOtherSelect="TimeOther"))
+mc_responses_usa <- rename(mc_responses_usa, c(MajorSelect="Major"))
+mc_responses_usa <- rename(mc_responses_usa, 
+                          c(LanguageRecommendationSelect="RecommendedLanguage"))
+mc_responses_usa <- rename(mc_responses_usa, 
+                           c(MLMethodNextYearSelect="MLMethodNextYear"))
+mc_responses_usa <- rename(mc_responses_usa, 
+                           c(MLToolNextYearSelect="MLToolNextYear"))
+
+mc_responses_usa$CompensationAmount <- as.numeric(gsub(",","",
+                                           mc_responses_usa$CompensationAmount))
+
+mc_responses_usa$WorkDatasetSize <- ordered(mc_responses_usa$WorkDatasetSize,
+                                            levels = c('<1MB','1MB','10MB',
+                                                       '100MB','1GB','10GB',
+                                                       '100GB','1TB','10TB',
+                                                       '100TB','1PB','10PB',
+                                                       '100PB','1EB','>1EB'))
+
+mc_responses_usa$TitleFit <- ordered(mc_responses_usa$TitleFit,
+                                     levels = c('Poorly','Fine','Perfectly'))
+
+mc_responses_usa$Tenure <- ordered(mc_responses_usa$Tenure,
+                                levels = c("I don't write code to analyze data",
+                                           'Less than a year','1 to 2 years',
+                                           '3 to 5 years','6 to 10 years',
+                                           'More than 10 years'))
+
+mc_responses_usa$SalaryChange <- ordered(mc_responses_usa$SalaryChange, 
+                                      levels = c('Other',
+'I do not want to share information about my salary/compensation',
+'I was not employed 3 years ago',
+'I am not currently employed','Has decreased 20% or more',
+'Has decreased between 6% and 19%',
+'Has stayed about the same (has not increased or decreased more than 5%)',
+'Has increased between 6% and 19%','Has increased 20% or more'))
+
+mc_responses_usa$AlgorithmUnderstandingLevel <- 
+  gsub("Enough to code it from scratch and it will run blazingly fast and be super efficient",
+"Enough to code it from scratch and have it be fast and efficient",
+mc_responses_usa$AlgorithmUnderstandingLevel)
+
+mc_responses_usa$AlgorithmUnderstandingLevel <- 
+  ordered(mc_responses_usa$AlgorithmUnderstandingLevel, 
+          levels = c('Enough to run the code / standard library',
+                     'Enough to tune the parameters properly',
+                     'Enough to explain the algorithm to someone non-technical',
+                     'Enough to refine and innovate on the algorithm',
+               'Enough to code it again from scratch, albeit it may run slowly',
+           "Enough to code it from scratch and have it be fast and efficient"))
+
+mc_responses_usa$JobSatisfaction <- gsub("1 - Highly Dissatisfied","1",
+                                         mc_responses_usa$JobSatisfaction)
+
+mc_responses_usa$JobSatisfaction <- gsub("10 - Highly Satisfied","10",
+                                         mc_responses_usa$JobSatisfaction)
+
+mc_responses_usa$JobSatisfaction <- ordered(mc_responses_usa$JobSatisfaction, 
+                                            levels = c("I prefer not to share",
+                                                       "1","2","3","4","5","6",
+                                                       "7","8","9","10"))
+
+mc_responses_usa$FormalEducation <- gsub("Doctoral degree","Doctorate",
+                                         mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- gsub("Professional degree",
+                                         "Professional Degree",
+                                         mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- 
+  gsub("Some college/university study without earning a bachelor's degree",
+       "Some college/university",mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- gsub("Master's degree","Master's",
+                                         mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- gsub("Bachelor's degree","Bachelor's",
+                                         mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- gsub("I prefer not to answer","Other",
+                                         mc_responses_usa$FormalEducation)
+mc_responses_usa$FormalEducation <- 
+  gsub("I did not complete any formal education past high school","High School",
+       mc_responses_usa$FormalEducation)
+
+mc_responses_usa$FormalEducation <- ordered(mc_responses_usa$FormalEducation, 
+                                            levels = c("High School", 
+                                                      "Some college/university",
+                                                      "Bachelor's", "Master's",
+                                                      "Doctorate", 
+                                                      "Professional Degree", 
+                                                      "Other"))
+
+mc_responses_usa$ParentsEducation <- gsub("A doctoral degree","Doctorate",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("A professional degree",
+                                          "Professional Degree",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("A bachelor's degree","Bachelor's",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("A master's degree","Master's",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- 
+  gsub("Some college/university study, no bachelor's degree",
+       "Some college/university", mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("No education","Other",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("I prefer not to answer","Other",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("I don't know/not sure","Other",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("High school","High School",
+                                          mc_responses_usa$ParentsEducation)
+mc_responses_usa$ParentsEducation <- gsub("Primary/elementary school","Other",
+                                          mc_responses_usa$ParentsEducation)
+
+mc_responses_usa$ParentsEducation <- ordered(mc_responses_usa$ParentsEducation,
+                                             levels = c("High School", 
+                                                      "Some college/university",
+                                                      "Bachelor's", "Master's",
+                                                      "Doctorate", 
+                                                      "Professional Degree",
+                                                      "Other"))
+```
+
+The structure of the new dataset is shown below:
+```{r}
+str(mc_responses_usa)
+```
+
+# Univariate Plots
+
+In this section, preliminary exploration of the dataset occurs, along with summaries of the data and univariate plots to understand the structure of the individual variables.
+
+The first question that drove exploration of this data is, "What age is a typical data science worker?" The box plot and summary statistics show that the median age is 33 and the mean is 36. This shows that the there is a slight upward skew. In the box plot, the red dot marks the average age. The thick black line marks the median age. The box is the inner 50% quartiles. The bottom line marks the bottom 25% quartile (28 years old), and the top line marks the upper 75% quartile (42 years old). The circles then mark outliers. For example, there is an outlier at 1 and 72 which are the min and max. It is likely that 1 is a fake age because it is improbable that a toddler works in data science.
+
+```{r echo=FALSE, Univariate_Plots}
+boxplot(mc_responses_usa$Age, data=subset(mc_responses_usa, 
+                                          !Age == "" && !is.na(Age)),  
+        main="US Data Scientists", ylab="Age")
+
+points(mean(mc_responses_usa$Age, na.rm = TRUE),col='#990000', pch=18)
+
+summary(mc_responses_usa$Age)
+```
+
+If US high school graduation is common at age 18, college Bachelor graduation at 21, and Master's at 23 and the lowest quartile is 28, do most of these data science workers have a Ph.D.?
+
+```{r echo=FALSE, warning=FALSE}
+qplot(x= FormalEducation, data = mc_responses_usa) + 
+  xlab("Data Scientist's Education") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+summary(mc_responses_usa$FormalEducation)
+```
+
+The above graph shows that data science and machine learning workers have a fairly bell-shaped normal distribution centered at a Master's degree. Most workers have a Master's degree (44%), then a Doctorate (26%), and then a Bachelor's (24%). Master's gap is a huge 1.68x more than Doctorates, 1.83x more than Bachelor's, and 29x more than a Professional degree.
+
+This Bachelors: Masters: Doctorate ratio is unusual given that data science is not a licensed field were people are required to obtain a certain degree like medical doctors. It is also interesting because for ages 25 and over, the educational attainment in the United States is 8% higher for Bachelor's, 32% lower for Master's, and 24% lower for Doctorate when compared to the percentages for data science workers. Thus, the shape and distribution of above graph do not match the shape and distribution of the education for the United States.
+
+Are data science and machine learning employees' parents similar?
+
+```{r echo=FALSE, warning=FALSE}
+qplot(x= ParentsEducation, 
+      data = subset(mc_responses_usa, !is.na(ParentsEducation))) + 
+  xlab("Parents' Education") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+summary(mc_responses_usa$ParentsEducation)
+```
+
+The parents' are less education than their children and the graph does not exhibit such a nice symmetry as the data scientist education graph did. It is a goal of many parents to have their children better off than the parents' had growing up, so these parents are probably happy that their child is more educated than they are.
+
+What was the data scientists' major?
+
+```{r echo=FALSE, message=FALSE}
+qplot(x= Major, data = subset(mc_responses_usa, !is.na(Major))) + xlab("Major") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+summary(mc_responses_usa$Major)
+```
+
+The major graph shows that the plurality of data scientists and machine learning workers studied mathematics or statistics followed by computer science than engineering.  Excluding "NA," 76% had a stem major (Health Science, Biology, Computer Science, Engineering, IT, Management Information Systems, Math, and Physics) and 24% did not (Humanities, Social Science, Fine Arts, Other, Psychology).
+
+Another important characteristic for many people in choosing a profession is the compensation.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+p <- ggplot(aes(x = CompensationAmount), data = mc_responses_usa) +
+  geom_histogram(color = I('#FFCC00'), fill = I('#00274c'))
+p1 <- p + scale_x_continuous() + xlab("Compensation Amount")
+p2 <- p + scale_x_log10() + xlab("Log Compensation Amount")
+p3 <- p + scale_x_sqrt() + xlab("Squart Root Compensation Amount")
+
+grid.arrange(p1, p2, p3, ncol = 1)
+
+summary(mc_responses_usa$CompensationAmount)
+
+#what does it mean when taking the square root shows a normal distribution
+```
+
+When taking the square root of the compensation, a normal distribution appears.
+
+Have data scientist's salaries been increasing, decreasing or stagnant?
+
+```{r echo=FALSE, message=FALSE, fig.height=5, fig.width=12}
+SCgraph <- mc_responses_usa
+SCgraph <- subset(SCgraph, !SalaryChange == "I am not currently employed")
+
+ggplot(aes(x = SalaryChange), 
+       data = subset(SCgraph, !is.na(SalaryChange))) + 
+  geom_bar(fill = I('#990000')) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab('Salary Change')
+
+summary(mc_responses_usa$SalaryChange)
+```
+
+The figure shows that data scientists and machine learners salaries have been increasing for most of them, and the plurality of them have seen theirs increase by 20% or more.
+
+These workers make a lot more than the median and mean United States income. A next logical step could be what is their job title.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = CurrentJobTitle), 
+       data = subset(mc_responses_usa, !is.na(CurrentJobTitle))) + 
+  geom_bar(color = I('gold'), fill = I('#FFCC00')) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  geom_hline(yintercept = median(table(subset(mc_responses_usa$CurrentJobTitle, 
+                                    !is.na(mc_responses_usa$CurrentJobTitle)))),
+             color = I('#990000')) + xlab('Current Job Title')
+
+summary(mc_responses_usa$CurrentJobTitle)
+```
+The plurality said their title was "Data Scientist," which is as expected since that is what the survey focused on. "Data Analyst" took the next highest spot by beating out "Scientist/Researcher" by one. The black horizontal line shows the median number of votes for a current job title, which is 52.
+
+Does that title fit them well?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x = TitleFit), data = subset(mc_responses_usa, !is.na(TitleFit))) + 
+  geom_bar(fill = I('#00274C')) + theme(axis.text.x = element_text(angle = 45,
+                                                                   hjust = 1)) + 
+  xlab('Job Title Fit')
+
+summary(mc_responses_usa$TitleFit)
+```
+
+Most think that the title fits them well.
+
+Are they happy at their job?
+
+```{r echo=FALSE,, warning=FALSE}
+
+ggplot(aes(x = JobSatisfaction), data = subset(mc_responses_usa, 
+                                               !is.na(JobSatisfaction))) + 
+  geom_bar(fill = I('#990000'), position = position_stack(reverse = TRUE)) + 
+  xlab('Job Satisfaction') + coord_flip() + 
+  geom_hline(yintercept = 
+               median(table(subset(mc_responses_usa$JobSatisfaction,
+                                   !is.na(mc_responses_usa$JobSatisfaction)))),
+             color = "#FFCC00")
+
+summary(mc_responses_usa$JobSatisfaction)
+
+```
+
+The column graph shows that most of them are happy. The plurality was at 8. All of the upper numbers, meet or exceed the median number of votes per a satisfaction level, which is marked by the gold line.
+
+Finally, what do they spend their time at work doing?
+
+```{r echo=FALSE, warning=FALSE}
+slices <- c(mean(mc_responses_usa$TimeGatheringData, na.rm=TRUE), 
+            mean(mc_responses_usa$TimeModelBuilding, na.rm=TRUE),
+            mean(mc_responses_usa$TimeProduction, na.rm=TRUE), 
+            mean(mc_responses_usa$TimeVisualizing, na.rm=TRUE),
+            mean(mc_responses_usa$TimeFindingInsights, na.rm=TRUE), 
+            mean(mc_responses_usa$TimeOther, na.rm=TRUE))
+
+pielabels <- c("Gathering Data", "Model Building", "Production","Visualizating",
+               "Finding Insights", "Other")
+piechart <- round(slices)
+pielabels <- paste(pielabels, ":  ",piechart, "%",sep="")
+pie(slices, labels = pielabels, 
+    main="How Data Scientists Spend their Time At Work", col = c("#990000",
+                        "#00274c", "#FFCC00", "#DED6CC", "#AB7305", "#A1ADC7"))
+
+
+summary(mc_responses_usa$TimeGatheringData)
+
+summary(mc_responses_usa$TimeModelBuilding)
+
+summary(mc_responses_usa$TimeProduction)
+
+summary(mc_responses_usa$TimeVisualizing)
+
+summary(mc_responses_usa$TimeFindingInsights)
+
+summary(mc_responses_usa$TimeOther)
+```
+
+Data scientist at work spend most of their time gathering data so how much data do they gather?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(aes(x = WorkDatasetSize), data = subset(mc_responses_usa, 
+                                               !is.na(WorkDatasetSize))) + 
+  geom_bar(fill = I('#00274c')) + theme(axis.text.x = element_text(angle = 45, 
+                                                                   hjust = 1)) + 
+  xlab('Dataset Size at Work')
+
+summary(mc_responses_usa$WorkDatasetSize)
+
+```
+
+How long have they been writing code?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10}
+ggplot(aes(x = Tenure), data = subset(mc_responses_usa, !is.na(Tenure))) + 
+  geom_bar(fill = I('#FFCC00')) + theme(axis.text.x = element_text(angle = 45,
+                                                                   hjust = 1)) + 
+  xlab('Coding Tenure') +
+  geom_hline(yintercept = median(table(subset(mc_responses_usa$Tenure, 
+                                            !is.na(mc_responses_usa$Tenure)))),
+             color = "#990000")
+
+summary(mc_responses_usa$Tenure)
+```
+
+Do they understand their algorithms well?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=12}
+ggplot(aes(x = AlgorithmUnderstandingLevel), data = subset(mc_responses_usa, 
+                                        !is.na(AlgorithmUnderstandingLevel))) + 
+  geom_bar(fill = I('#990000')) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  xlab('Level of Understanding Algorithms') + 
+  geom_hline(yintercept = 
+               median(table(subset(mc_responses_usa$AlgorithmUnderstandingLevel,
+                    !is.na(mc_responses_usa$AlgorithmUnderstandingLevel)))), 
+             color = "#00274C")
+
+summary(mc_responses_usa$AlgorithmUnderstandingLevel)
+```
+
+What algorithms do they plan on learning or using in 2018?
+
+```{r echo=FALSE, warning=FALSE, fig.height=5}
+
+dotchart(summary(mc_responses_usa$MLMethodNextYear, na.rm = TRUE),
+         labels=row.names(mc_responses_usa$MLMethodNextYear),cex=.7,
+  	main="Machine Learning Method to Learn in 2018", 
+   xlab="Number of Votes")
+
+summary(mc_responses_usa$MLMethodNextYear)
+```
+Note: If you do not know any of the above terms, check the appendix.
+
+What machine learning tool do they plan to use in 2018?
+
+```{r echo=FALSE, message=FALSE, fig.height=8}
+dotchart(summary(mc_responses_usa$MLToolNextYear, na.rm = TRUE),
+         labels=row.names(mc_responses_usa$MLToolNextYear),cex=.7,
+  	main="Machine Learning Tool to Learn in 2018", 
+   xlab="Number of Votes") 
+
+summary(mc_responses_usa$MLToolNextYear)
+```
+
+## Further Univariate Analysis
+
+There are many features of interest in this smaller dataset and even more in the broader dataset. This report focuses on gender, age, formal education, recommended programming language, compensation, job satisfaction, and tools and methods to learn. The general statistics or counts of each of those variables were plotted in the univariate section. In the process of plotting that data, temporary new variables were created from existing variables in the dataset.
+
+Four interesting insights from the univariate plots are:
+1. Computer Science majors were not the dominant major among data scientists and machine learners.
+2. The square root of compensation resulted in a normal distribution.
+3. Most data scientists and machine learners say their salaries increased by at least 20% in the last three years.
+4. There is a mysteries decrease at 6 to 10 years of coding tenure. Is that decrease still prevalent when coding tenure is divided by gender?
+
+The next segment will investigate and see if the statistics or distributions differ when variables are compared or subdivided with other variables, such as is the median age or compensation differ between males and females.
+
+# Bivariate Plots
+
+Based on the univariate plots, there are many interesting possible relationships between variables. First, is there a relationship between compensation and age for data scientists?
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(mc_responses_usa, aes(x=Age, y=CompensationAmount)) + geom_jitter() + 
+  coord_cartesian(ylim = c(20000,300000), xlim = c(15,75)) + 
+  scale_x_continuous(breaks = seq(15,75,10)) + 
+  ylab("Compensation Amount")
+
+cor.test(mc_responses_usa$Age, mc_responses_usa$CompensationAmount, 
+         method = 'pearson')
+
+```
+Note: Geom_Jitter was used because age is a continuous variable but individuals only reported the integer age.
+
+Since correlation (0.2078) is not greater than 0.3, there is no meaningful strength between age and compensation according to the Pearson method; but this weak relationship is significant since it has a p-value <= 0.05.
+
+```{r echo=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+set.seed(23)
+mydata <- na.omit(mc_responses_usa[c(2,20)]) # listwise deletion of missing
+mydata <- scale(mydata) # standardize variables
+
+fit <- kmeans(mydata, 3) # 3 cluster solution
+# get cluster means 
+aggregate(mydata,by=list(fit$cluster),FUN=mean)
+# append cluster assignment
+mydata <- data.frame(mydata, fit$cluster)
+
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, 
+  	labels=2, lines=0, xlab = "Age", ylab = "Compensation")
+```
+
+This is likely because compensation typically increases over time and age always increases over time, so these two variables are typically also going in the same direction. However, being a certain age does not mean you will receive a certain income.
+
+```{r echo=FALSE, warning=FALSE}
+
+ggplot(aes(x = Gender, y = CompensationAmount), data = subset(mc_responses_usa, 
+                                                              !Gender  == "")) + 
+  geom_boxplot() + stat_summary(fun.y = mean, geom = 'point', shape = 4) + 
+  ylab('Compensation Amount') + coord_cartesian(ylim = c(20000,300000)) + 
+  scale_y_continuous(breaks = seq(20000,300000,50000)) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+by(mc_responses_usa$CompensationAmount, mc_responses_usa$Gender, summary)
+```
+
+The gender-compensation plot shows that males have a higher median and average salary than females. They also have a higher max, third quartile, and first quartile. Since only six and eight respondents identified as "a different identity" or "non-binary, gender-queer, or gender non-conforming," statistically significant decisions cannot be made about their compensation.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+ggplot(aes(x = CompensationAmount),
+       data = subset(mc_responses_usa, !RecommendedLanguage == "")) +
+  geom_freqpoly(aes(color = RecommendedLanguage))  +
+  scale_x_continuous(limits = c(20000, 300000)) +
+  xlab("Compensation Amount")
+
+by(mc_responses_usa$CompensationAmount, mc_responses_usa$RecommendedLanguage, 
+   summary)
+
+```
+
+The above plot shows Python is the most recommended computer language followed by R then SQL. Python recommenders' salary is higher than R recommenders.
+
+It will be insightful to know if there is a significant difference between compensation level per a language and compensation level per a recommended language. This Kaggle study did not track that. It is also possible that people recommended both Python and R equally, which Kaggle did not tracked. Lastly, the study also used "recommends" so it is possible that a data scientist recommended something they do not use.
+
+Since "blank" or "no language" had 30 respondents, 30 was used as the cut-off level of required minimum number of responses to provide useful data. This left only Python (783 respondents), R (283), and SQL (64) with enough of respondents for insights to be concluded.
+
+Out of these three languages, the largest median income per recommended language is Python (110,000) then SQL (108,000) then R (97,500). On average, it is Python (125,335), then R (110,730), then SQL (104,527).
+
+What's the breakdown of education by job satisfaction?
+
+```{r echo=FALSE, warning=FALSE, fig.height=5}
+
+ggplot(subset(mc_responses_usa, !is.na(FormalEducation)), 
+       aes(x = FormalEducation,fill=JobSatisfaction)) +  
+        geom_bar(aes(y = (..count..)/sum(..count..))) +
+  ylab('Percent') + xlab("Data Scientist's Education") + 
+        scale_y_continuous(labels = percent)  + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```        
+     
+Is this breakdown similar with parents' education?
+
+```{r echo=FALSE, warning=FALSE, fig.height=5}
+ggplot(subset(mc_responses_usa, !is.na(ParentsEducation)), 
+       aes(x = ParentsEducation,fill=JobSatisfaction)) +  
+        geom_bar(aes(y = (..count..)/sum(..count..))) +
+  ylab('Percent') + xlab("Parents' Education") + 
+        scale_y_continuous(labels = percent)  + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+by(mc_responses_usa$FormalEducation, mc_responses_usa$ParentsEducation, summary)
+
+```
+
+```{r echo=FALSE, warning=FALSE, fig.width=7}
+
+DF <- mc_responses_usa
+DF[] <- lapply(DF,as.integer)
+
+ggcorr(DF, method = c("pairwise.complete.obs","spearman"), hjust = 1,
+       layout.exp = 4.5, label = TRUE, label_size = 2.2)
+
+```
+
+In regards to the above correlogram, Spearman method was used because the data was assumed to be non-linear.
+
+Therefore, the null hypothesis is that the Spearman correlation coefficient, rho, is 0. A rho of 0 means that the ranks of one variable do not covary with the ranks of the other variable.  In other words, as the ranks of one variable increase, the ranks of the other variable do not increase or decrease. Also, in the graph, a small p-value (typically ??? 0.05) indicates strong evidence against the null hypothesis, so you reject the null hypothesis.
+
+Excluding the forced correlations with the time spent doing different tasks at work, some logical insights from the correlation matrix are:
+
+1. Formal education and age are positively correlated as expected (rho = 0.272, p < .001).
+
+2. Coding tenure and age have the strongest correlation at 0.57, followed by tenure and compensation amount at 0.42, then compensation amount and age at 0.391, and then coding tenure and education at 0.301.
+
+3. Work dataset size and machine learning tool to learn next year is not unexpected to correlate (rho 0.069, p -.028) as people's decision on what tool to learn could be affected by how much data they have to process. Similar logic can be applied to recommended language and work dataset size (rho -0.095, p -0.002).
+
+4. Time model building is correlated to coding tenure, major, formal education, and recommended language next year as possibly expected. (It also showed correlation with Title Fit which is not expected.)
+
+5. Recommended language correlated with all the work time variables except "time other" and "time gathering data."
+
+6. Job satisfaction is correlated with job title fit, salary change, and compensation amount.
+
+7. Salary change is correlated to coding tenure and compensation amount.
+
+8. Lastly, there is also a correlation between compensation and: age, gender, education (but not parents' education), coding tenure, and algorithm understanding level.
+
+There were more variable correlations, but many began to stretch what most people would consider justified. For instance, tenure and work data size was correlated. An argument could be made that the better coders have coded longer, i.e., longer coding tenure. Since they are better coders, they are assigned or chose to work with larger dataset sizes at work. However, others might say that work dataset size is independent of a coders tenure. The dataset size is more contingent on how many people use the service that is collecting the data, or how many respond to a specific survey or the dataset bought by the coder's employer.
+
+## Further Bivariate Analysis
+
+The box plot, before adjusting the y-axis, showed outliers near 100 years old for "a different identity," "males," and "gender-queer, or gender non-conforming." There was no outlier at this high age range for females and individuals who did not specify a gender. This highlights two of the most difficult data collection issues - complete answers and the integrity of the answers. Since 100 years old are outliers, it is also skeptical that these individuals are 100 years old and did not enter an incorrect age.
+
+The correlation matrix displays all the correlations between two variables. Excluding time-dependent variables (age, coding tenure, work time tasks), the strongest relationship was between salary change and compensation amount at .231, then job satisfaction and title fit at .221, and finally, the unexpected correlation between compensation amount and work dataset size at .176.
+
+The statistically significant correlation between compensation amount and gender matches the gender-pay inequality that is sometimes heard in the news. Fortunately, it is only a weak correlation of 0.129. 
+
+# Multivariate Plots
+
+```{r echo=FALSE, warning=FALSE, Multivariate_Plots, fig.width= 7}
+
+mvp1 <- subset(mc_responses_usa, !is.na(Age))
+mvp1$FormalEducation <- ordered(mvp1$FormalEducation, 
+                                levels = c("Bachelor's", "Master's", "Doctorate"))
+mvp1 <- subset(mvp1, !is.na(FormalEducation))
+mvp1$ParentsEducation <- ordered(mvp1$ParentsEducation, 
+                                 levels = c("Bachelor's", "Master's", "Doctorate"))
+mvp1 <- subset(mvp1, !is.na(ParentsEducation))
+mvp1 <- subset(mvp1, !is.na(TitleFit))
+
+ggplot(data=mvp1, aes(x=factor(TitleFit), y=JobSatisfaction,
+                      group=ParentsEducation, shape=ParentsEducation, 
+                      color=ParentsEducation)) + 
+  geom_point(alpha = 1/1.5, position = position_jitter(w=0.25)) + 
+  facet_grid(.~FormalEducation) + 
+  labs(title = "Education vs. Satisfaction", x = "Job Title Fit",
+       y = "Job Satisfaction") + theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+The densest section around the data scientist's education of Masters and the job title fit of "fine" shows that the majority of respondents had a Masters degree as we saw in an earlier graph. The lack of a clear grouping of color at either number of data scientist education level leads readers to believe that there is no correlation between parents education and job satisfaction or parents education and data scientist's education. The few points near the low numbers of job satisfaction means most respondents were satisfied with their job. Lastly the grouping near 10 and perfectly for Doctorate and the grouping near 1 and poorly in Master's makes it seem like job title fit, and job satisfaction could be correlated, which according to the correlation matrix they are.
+
+## Further Multivariate Analysis
+
+A surprising insight that the lack of influence of Parents Education on variables. It only was correlated with age and title fit weakly. It was expected that parents education would be correlated with offspring's/data scientist's education too.
+
+A linear regression model and a K-means cluster model were created which are in the "Final Plots and Summary" section.
+
+# Final Plots and Summary
+
+The insights drawn from the numerous plots and statistics of this public dataset can aid both employees, employers, and others, by helping people determine what to learn, what to include in job requirements, what to title job positions, and what salary level to began compensation packages. To continue emphasizing key info about the data science and machine learning industry, two multivariate plots and a cluster analysis are highlighted in the summary. 
+
+Lastly, some tips drawn from the data insights are:
+
+1. Learn Python, R, and SQL as they are the most used languages by the data scientists.
+
+2. Learn deep learning and neural nets as they will be the most sought-after techniques in the future.
+
+3. Develop skills for gathering data as it can be the most time-consuming process in the workflow of a data scientist.
+
+4. Statistics and mathematics are vital to understanding how certain algorithms work.
+
+## Immutable Attributes
+
+Age, gender, and compensation can not easily be changed by an employee. Compensation is not considered easy to change because it is determined by the employer.
+
+```{r echo=FALSE, warning=FALSE, Plot_One}
+fmvc <- subset(mc_responses_usa, (mc_responses_usa$Gender == "Male" |
+                                    mc_responses_usa$Gender == "Female"))
+
+ggplot(fmvc, aes(x = CompensationAmount, y = Age, color = Gender)) + 
+  geom_jitter() + 
+  coord_cartesian(xlim = c(20000,300000), ylim = c(20,70)) + 
+labs(title = "Pay Breakdown", x = "Compensation [USD]",
+       y = "Age [Years]") +  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+
+The above graph shows the dominance of male (blue) over females (light red) responses in the survey. It also makes some interesting outliers evident; such as the female that is around 70 years old but one of the lowest paid or the 25-year-old male that is one of the highest paid.
+
+### K-Means Clustering
+
+To analyze the point variability of two of these immutable attributes, a K-Means cluster analysis was conducted.
+
+```{r echo=FALSE, warning=FALSE, Plot_Two}
+
+set.seed(23)
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, 
+  	labels=2, lines=0, xlab = "Age", ylab = "Compensation", 
+  	main = "Cluster Analysis of 1203 Data Points")
+
+```
+
+A k of 3 was determined because 2 and 4 cluster groups explained a smaller percent of point variability.
+
+## Mutable Attributes
+
+The level which an employee understands something and the programming tools or languages that you recommend can easily be changed by an employee.
+
+```{r echo=FALSE, warning=FALSE, Plot_Three, fig.width=15}
+
+MLMnum <- as.numeric(mc_responses_usa$MLMethodNextYear)
+
+AlULnum <- as.numeric(mc_responses_usa$AlgorithmUnderstandingLevel)
+
+fit <- lm(formula = MLMnum ~ AlULnum)
+
+fp3 <- mc_responses_usa
+fp3$MLMethodNextYear <- ordered(fp3$MLMethodNextYear, 
+       levels = c("Anomaly Detection","Association Rules","Bayesian Methods",
+                  "Cluster Analysis","Decision Trees","Deep learning",
+                  "Ensemble Methods (e.g. boosting, bagging)","Factor Analysis",
+                  "Genetic & Evolutionary Algorithms","Link Analysis","MARS",
+                  "Monte Carlo Methods","Neural Nets","Proprietary Algorithms",
+                  "Random Forests","Regression","Rule Induction",
+                  "Social Network Analysis","Support Vector Machines (SVM)",
+                  "Survival Analysis","Text Mining","Time Series Analysis",
+                  "Uplift Modeling"))
+fp3 <- subset(mc_responses_usa, !is.na(MLMethodNextYear))
+fp3$RecommendedLanguage <- ordered(fp3$RecommendedLanguage, 
+                                   levels = c("Python", "R"))
+fp3 <- subset(fp3, !is.na(RecommendedLanguage))
+fp3 <- subset(fp3, !is.na(AlgorithmUnderstandingLevel))
+
+ggplot(fp3, aes(x = MLMethodNextYear,fill=AlgorithmUnderstandingLevel)) +  
+        geom_bar(aes(y = (..count..)/sum(..count..))) + 
+  xlab("Machine Learning Method") + 
+  ggtitle("Technical Understanding and Recommendation Comparision") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        plot.title = element_text(face = "bold", size = 14, hjust = 0.5)) + 
+  geom_hline(yintercept = median((table(fp3$MLMethodNextYear)/
+                                    sum(table(fp3$MLMethodNextYear))))) + 
+  labs(fill = "Level of Algorithm Understanding") + 
+  facet_grid(.~RecommendedLanguage) +   ylab('Percent') + 
+  scale_y_continuous(labels = percent)
+
+summary(fit) # show results
+```
+
+The chart above shows the within Python, the most popularly recommended language among data scientists and machine learners, those that also recommended "Deep Learning" also have the most people that know enough to code algorithms from scratch and have it be fast and efficient.
+
+## Reflection
+
+The US data science and machine learning dataset contains information on 1240 respondents across 22 variables from 2017. I started by understanding the individual variables in the dataset in the univariate section, and then I explored exciting leads as I continued to make observations on plots, apply statistical concepts, and described relationships in data. Eventually, I explored compensation across many variables and created a K-means cluster graph.
+
+There was never strong trends between variables, but there was a lot of statistically significant correlations. I was also surprised that algorithm understanding level correlated the most with variables by correlating with 12 out of 21 possible variables. The next closest was job satisfaction which correlated with nine other variables.
+
+In future work, data science can benefit by learning the job search duration. Job hunt time was included in the Kaggle survey but was not an answered question in the United States. Additionally, the breakdown of data scientists by race/ethnicity and sexual orientation can also provide interesting insight.
+
+The respondents of Kaggle's survey were most likely Kaggle users which means the resultant dataset is biased towards those type of respondents. It is unknown if data scientists that use Kaggle are significantly different from data scientists that do not use Kaggle.
+
+#Appendix
+
+##Terminology
+
+**Association Rules** - rule-based machine learning method for discovering interesting relations between variables in large databases.^[3]^
+
+**Bayesian Methods** -  a statistical inference method in which Bayes' theorem is used to update the probability of a hypothesis as more data becomes available.
+
+**Convolutional Neural Network** - a class of feed-forward neural networks comprised of one or more convolutional layers and then followed by one or more fully connected layers that have successfully been utilized for analyzing imagery.
+
+**Cluster Analysis** - grouping a set of items in such a way that objects in the same cluster are more similar (in some sense) to each other than to those in other clusters.
+
+**Collaborative Filtering** -  a technique that has a narrow and general sense and has been used by recommender systems.
+
+**Cross-Validation** - a model validation method for assessing how the outcomes of a statistical analysis will generalize to an independent dataset.
+
+**Decision Trees** - a decision support tool that uses a model of decisions or tree-like graph and their possible outcomes, including resource costs, utility, and chance event outcomes.
+
+**Deep Learning** - a subset of machine learning methods based on learning data representations, as opposed to task-specific algorithms.
+
+**Dimensional Modeling** - set of concepts and techniques used in data warehouse design.
+
+**Ensemble Methods (e.g., boosting, bagging)** - use of diverse learning algorithms to achieve better predictive performance than could be gained from any of the constituent learning algorithms alone.
+
+**Factor Analysis** - a statistical technique to describe variability among observed, correlated variables concerning a possibly lower number of unobserved variables named factors. For instance, it is possible that variations in eight observed variables mainly reflect the changes in two underlying, unobserved variables.
+
+**Genetic and Evolutionary Algorithms** - evolutionary algorithm (EA) includes genetic algorithms and uses mechanisms inspired by biological evolution, such as mutation, reproduction, selection, and recombination. EA is a subset of a generic population-based metaheuristic optimization algorithm.  A genetic algorithm is a class of evolutionary algorithm. Although genetic algorithms are a frequently encountered type of evolutionary algorithm, there are other types.
+
+**Link Analysis** - a data-analysis technique used to evaluate relationships between nodes. Relationships may be identified among various types of nodes, including organizations, people, and transactions.
+
+**Multivariate Adaptive Regression Splines** - a non-parametric regression technique that automatically models nonlinearities and interactions between variables.
+
+**Monte Carlo Methods** - a set of computational algorithms that depend on repeated random sampling to obtain numerical results.
+
+**Neural Nets** - a system of data structures and programs that approximates the operation of the human brain. A neural network ordinarily involves many processors operating in parallel.
+
+**Principal Components Analysis** - a statistical operation that uses an orthogonal transformation to convert a batch of potentially correlated variables into a group of linearly uncorrelated variables termed principal components.
+
+**Random Forests** - a composite learning method for regression, classification, and other tasks, that operates by constructing a multitude of decision trees at training time and outputting the class that is the mean prediction (regression) of the individual trees or mode of the classes (classification).
+
+**Linear Regression** - a linear approach for modeling the relationship between one or more explanatory variables and a scalar dependent variable.
+    
+**Rule Induction** - an area of machine learning in which formal rules are extracted from a set of observations. The rules obtained may represent a full scientific model of the data, or merely local patterns in the data.
+
+**Social Network Analysis** - a process of examining social structures through the use of networks and graph theory. It characterizes networked structures as nodes (individual actors, things, or people within the system) and the ties, edges, or links (interactions or relationships) that connect them. 
+
+**Support Vector Machines (SVM)** - a discriminative classifier formally defined by a separating hyperplane; i.e., given labeled training data (supervised learning), the algorithm outputs an optimal hyperplane which categorizes new examples.
+
+**Survival Analysis** - a division of statistics for analyzing the expected time until one or more events happen
+
+**Text Mining** - the process of deriving high-quality information from text typically by devising trends or patterns through methods like statistical pattern learning.
+
+**Time Series** - a sequence of data points indexed in time order. Since a time series is commonly a sequence taken at successive equally spaced intervals, it is a sequence of discrete-time data.
+
+**Uplift Modeling** - a predictive modeling method that directly illustrates the incremental impact of a treatment, such as a marketing action, on an actor's behavior.
+
+
+# Works Cited
+
+1. Kaggle. "Kaggle ML and Data Science Survey, 2017." Kaggle, 2017. Web. 12 January 2018. <https://www.kaggle.com/kaggle/kaggle-survey-2017/>.
+
+2. The percentages, which are calculated based on Census data by counting people that had attained that level or higher. add up to more than 100% because they are cumulative. For example, it is assumed that all people with doctorates also have undergraduate and high school degrees, and are thus counted twice in the "lower" categories. "Educational Attainment in the United States: 2014". U.S. Census Bureau. Retrieved January 29, 2015.
+
+3. Piatetsky-Shapiro, Gregory (1991), Discovery, analysis, and presentation of strong rules, in Piatetsky-Shapiro, Gregory; and Frawley, William J.; eds., Knowledge Discovery in Databases, AAAI/MIT Press, Cambridge, MA.
+ 

@@ -1,6 +1,6 @@
 # data_science_industry_R
 
-The goal of this project was twofold. First, it was to find an interesting dataset with at least 1,000 observations. Then it was to use R to apply exploratory data analysis techniques to explore relationships in one variable to multiple variables and to explore a selected data set for distributions, outliers, and anomalies. The report format was specificed for a class.
+The goal of this project was twofold. First, it was to find an interesting dataset with at least 1,000 observations. Then it was to use R to apply exploratory data analysis techniques to explore relationships in variables and to explore a selected data set for distributions, outliers, and anomalies. The report format was specificed for a class.
 
 This project analyzes a Kaggle.com survey of data analysts, data scientists, machine learning engineeers... to determine industry statistics.
 

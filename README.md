@@ -16,10 +16,11 @@ This project requires R programming language. You can download and install R fro
 
 Besides installing the necessary programming language, software, and software packages that are imported in the beginning of the code, no other installation is needed.
 
+
 Some R packages used are shown below:
-install.packages("ggplot2", dependencies = T) 
-install.packages("knitr", dependencies = T)
-install.packages("dplyr", dependencies = T)
+* install.packages("ggplot2", dependencies = T) 
+* install.packages("knitr", dependencies = T)
+* install.packages("dplyr", dependencies = T)
 
 ## Running the tests
 
